@@ -1,0 +1,50 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish (win-x64, 单文件, 自包含)
+        run: >
+          dotnet publish src/BtAudioReceiver.csproj
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -o out/win-x64
+
+      # 如需 32 位或 ARM64 版本，取消下面注释即可
+      # - name: Publish (win-arm64)
+      #   run: >
+      #     dotnet publish src/BtAudioReceiver.csproj
+      #     -c Release -r win-arm64 --self-contained true
+      #     -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+      #     -o out/win-arm64
+
+      - name: Upload artifact (在 Actions 页面下载)
+        uses: actions/upload-artifact@v4
+        with:
+          name: BtAudioReceiver-win-x64
+          path: out/win-x64/BtAudioReceiver.exe
+
+      - name: Create GitHub Release (仅打 tag 时)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: out/win-x64/BtAudioReceiver.exe
