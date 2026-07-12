@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <!--
+    Identity.Publisher 必须与签名证书 Subject 完全一致（逐字符）。
+    默认 CN=BtAudioReceiverDev；若改证书 Subject，此处同步改。
+    Version 必须四段式 x.x.x.x。
+  -->
+  <Identity
+    Name="BtAudioReceiver"
+    Publisher="CN=BtAudioReceiverDev"
+    Version="1.0.0.0"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>蓝牙音频接收器</DisplayName>
+    <PublisherDisplayName>BtAudioReceiver</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="zh-CN" />
+    <Resource Language="en-US" />
+  </Resources>
+
+  <Applications>
+    <Application Id="App"
+      Executable="BtAudioReceiver.exe"
+      EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="蓝牙音频接收器"
+        Description="手机媒体播放到电脑 + 蓝牙通话（A2DP + HFP）"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+
+  <!--
+    顺序必须：Capability(含 uap:) -> rescap:Capability -> DeviceCapability
+    - phoneCall：通话控制 API（拨号/接听/挂断），uap 命名空间普通能力
+    - runFullTrust：桌面(Win32)打包应用必需，restricted
+    - phoneLineTransportManagement：PhoneLineTransportDevice API 必需（管理电话线路
+      传输设备、让 RegisterApp/ConnectAsync 生效）——这是"手机连接"用的关键能力，restricted
+    - phoneCallHistory：GetPhoneCallInfo 读号码/来电信息用，restricted
+    - microphone / bluetooth：麦克风与蓝牙设备访问
+    侧载(自己安装)声明 restricted 能力不需要审批，仅上架商店才需要。
+  -->
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <uap:Capability Name="phoneCall" />
+    <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="phoneLineTransportManagement" />
+    <rescap:Capability Name="phoneCallHistory" />
+    <DeviceCapability Name="microphone" />
+    <DeviceCapability Name="bluetooth" />
+  </Capabilities>
+</Package>
