@@ -1,4 +1,4 @@
-name: Build Windows EXE
+name: Build MSIX (A2DP + HFP)
 
 on:
   push:
@@ -10,6 +10,12 @@ jobs:
   build:
     runs-on: windows-latest
 
+    env:
+      # 证书 Subject —— 必须与 AppxManifest.xml 里的 Identity.Publisher 完全一致
+      PUBLISHER: "CN=BtAudioReceiverDev"
+      # 自签名证书密码（仅 CI 内部临时证书用，可自行修改）
+      PFX_PASSWORD: "BtAudio!2026"
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -19,32 +25,100 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Publish (win-x64, 单文件, 自包含)
-        run: >
-          dotnet publish src/BtAudioReceiver.csproj
-          -c Release
-          -r win-x64
-          --self-contained true
-          -p:PublishSingleFile=true
-          -p:IncludeNativeLibrariesForSelfExtract=true
-          -o out/win-x64
+      # 1) 发布应用（自包含，目标机无需装 .NET）
+      - name: Publish app
+        shell: pwsh
+        run: |
+          dotnet publish src/BtAudioReceiver.csproj `
+            -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=false `
+            -o publish
 
-      # 如需 32 位或 ARM64 版本，取消下面注释即可
-      # - name: Publish (win-arm64)
-      #   run: >
-      #     dotnet publish src/BtAudioReceiver.csproj
-      #     -c Release -r win-arm64 --self-contained true
-      #     -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
-      #     -o out/win-arm64
+      # 2) 组装 MSIX 布局
+      - name: Stage MSIX layout
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path msix | Out-Null
+          Copy-Item -Recurse -Force publish\* msix\
+          Copy-Item -Force packaging\AppxManifest.xml msix\AppxManifest.xml
+          New-Item -ItemType Directory -Force -Path msix\Assets | Out-Null
+          Copy-Item -Recurse -Force packaging\Assets\* msix\Assets\
+          Write-Host "MSIX 布局内容："
+          Get-ChildItem -Recurse msix | Select-Object FullName
 
-      - name: Upload artifact (在 Actions 页面下载)
+      # 3) 定位 Windows SDK 工具
+      - name: Locate Windows SDK tools
+        id: sdk
+        shell: pwsh
+        run: |
+          $root = "C:\Program Files (x86)\Windows Kits\10\bin"
+          $makeappx = Get-ChildItem -Path $root -Recurse -Filter makeappx.exe |
+            Where-Object { $_.FullName -match 'x64' } |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          $signtool = Get-ChildItem -Path $root -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -match 'x64' } |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $makeappx) { throw "找不到 makeappx.exe" }
+          if (-not $signtool) { throw "找不到 signtool.exe" }
+          Write-Host "makeappx: $($makeappx.FullName)"
+          Write-Host "signtool: $($signtool.FullName)"
+          "makeappx=$($makeappx.FullName)" >> $env:GITHUB_OUTPUT
+          "signtool=$($signtool.FullName)" >> $env:GITHUB_OUTPUT
+
+      # 4) 生成自签名证书（Subject 必须与 Publisher 一致）
+      - name: Create self-signed certificate
+        shell: pwsh
+        run: |
+          $cert = New-SelfSignedCertificate `
+            -Type Custom -Subject "$env:PUBLISHER" `
+            -KeyUsage DigitalSignature `
+            -CertStoreLocation "Cert:\CurrentUser\My" `
+            -TextExtension @("2.5.29.37={text}1.3.6.1.5.5.7.3.3", "2.5.29.19={text}") `
+            -FriendlyName "BtAudioReceiver CI"
+          $pwd = ConvertTo-SecureString -String "$env:PFX_PASSWORD" -Force -AsPlainText
+          Export-PfxCertificate -Cert $cert -FilePath cert.pfx -Password $pwd | Out-Null
+          Export-Certificate -Cert $cert -FilePath BtAudioReceiver.cer | Out-Null
+          Write-Host "证书指纹：$($cert.Thumbprint)"
+
+      # 5) 打包 .msix
+      - name: Pack MSIX
+        shell: pwsh
+        run: |
+          & "${{ steps.sdk.outputs.makeappx }}" pack /d msix /p "BtAudioReceiver.msix" /o
+          if ($LASTEXITCODE -ne 0) { throw "makeappx 失败" }
+
+      # 6) 签名
+      - name: Sign MSIX
+        shell: pwsh
+        run: |
+          & "${{ steps.sdk.outputs.signtool }}" sign `
+            /fd SHA256 /a /f cert.pfx /p "$env:PFX_PASSWORD" `
+            "BtAudioReceiver.msix"
+          if ($LASTEXITCODE -ne 0) { throw "signtool 签名失败" }
+          Write-Host "签名完成。"
+
+      # 7) 清理私钥
+      - name: Cleanup pfx
+        if: always()
+        shell: pwsh
+        run: Remove-Item -Force cert.pfx -ErrorAction SilentlyContinue
+
+      # 8) 上传产物
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: BtAudioReceiver-win-x64
-          path: out/win-x64/BtAudioReceiver.exe
+          name: BtAudioReceiver-msix
+          path: |
+            BtAudioReceiver.msix
+            BtAudioReceiver.cer
+            Install.ps1
 
-      - name: Create GitHub Release (仅打 tag 时)
+      # 9) 打 tag 时创建 Release
+      - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: out/win-x64/BtAudioReceiver.exe
+          files: |
+            BtAudioReceiver.msix
+            BtAudioReceiver.cer
+            Install.ps1
