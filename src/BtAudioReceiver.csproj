@@ -2,11 +2,21 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <!-- 10.0.19041 = Windows 10 2004，AudioPlaybackConnection API 的最低版本 -->
-    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
-    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <!--
+      TFM 用 22621：Windows.ApplicationModel.Calls 里的 PhoneCall / PhoneLine /
+      PhoneCallManager / PhoneCallStatus 等类型需要较高的 SDK 投影才可见
+      （PhoneCall 引入于 build 20348，相关成员在更高版本），19041 里没有，会报 CS0246。
+      SupportedOSPlatformVersion 保持 19041，兼容旧系统运行时。
+    -->
+    <TargetFramework>net8.0-windows10.0.22621.0</TargetFramework>
     <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
-    <RuntimeIdentifiers>win-x64;win-x86;win-arm64</RuntimeIdentifiers>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <!--
+      显式钉住 Windows SDK 投影包版本，避免 .NET 8 SDK 版本不够新时找不到
+      默认 ref 包。该包在 NuGet 上，publish 时自动还原，无需 runner 预装 SDK。
+    -->
+    <WindowsSdkPackageVersion>10.0.22621.41</WindowsSdkPackageVersion>
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -15,6 +25,13 @@
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <InvariantGlobalization>true</InvariantGlobalization>
     <Version>1.0.0</Version>
+    <SelfContained>true</SelfContained>
+    <!--
+      CsWinRT 的 WinRT 互操作源生成器会生成含 unsafe 的代码
+      （WinRTGenericInstantiation.g.cs 等），必须开启此开关，否则报 CS0227。
+      这是使用 WinRT 投影时的标准要求。
+    -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
 </Project>
